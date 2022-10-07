@@ -60,16 +60,24 @@ noisyAudio = audio + noiseSegment;
 
 %% TODO: Load data into tall arrays and normalize... Maybe even employ sample rate conversion?
 
-%targets: dftSize x 1
-targets = tall() 
+[audioMag, noisedMag] = transformSignal(audio, fs, washNoise, 0.015, dftSize*2);
 
-%predictions: dftSize x 8
+%%
+divisionFactor = 8;
+dividedSegmentLength = segmentLength/divisionFactor;
+
+%collect last bit of audio
+audioSegment = powerSpecAudio(size(powerSpecAudio,2)-dividedSegmentLength:end);
+rev_as = powerSpecAudio(1:dividedSegmentLength);
+
+noisedMag()
+
 
 %% Define network structure
 
 %TODO: evaluate this very simple structure once data is ready...
 
- inputSize = [dftSize, 1, 1];
+ inputSize = [dftSize, 1, 1]; %should input size be of dftSize or the window?
  %numClasses = 2;
 % 
 layers = [
@@ -80,7 +88,8 @@ layers = [
     reluLayer
     fullyConnectedLayer(1024)
     softmaxLayer
-    classificationLayer];
+    %classificationLayer];
+    regressionLayer];
 
 analyzeNetwork(layers)
 
