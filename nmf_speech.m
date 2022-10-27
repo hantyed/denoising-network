@@ -2,12 +2,13 @@
 
 clear, %close all;
 doSampleRateConvert = false; %whether or not the audio is downsampled
-unknownInput = false; %whether 
+unknownInput = false; %whether to use new data after dictionary is created
 
 %import data to matrices
 %[input, fs] = audioread('speech_example.wav');
 %[trainNoise, fsNoise] = audioread('./nmfData/mainsBrum50Hz.wav');
 [trainNoise, fsNoise] = audioread("WashingMachine-16-8-mono-1000secs.mp3");
+%[trainNoise, fsNoise] = audioread("WashingMachine_48k_120secs.wav");
 
 samplesIncluded = 5;
 trainSpeech = getSpeechSamples(samplesIncluded);
@@ -51,13 +52,13 @@ end
 
 %%
 
-%add noise to the signals
+%add noise to the signals - either using a new set of samples or trainData
 
 if unknownInput
-    inputInit = getSpeechSamples(2);
+    inputInit = getSpeechSamples(samplesIncluded);
     inputInit = readall(inputInit);
     inputInit = cell2mat(inputInit);
-
+    
     input = add_noise(inputInit, trainNoise);
 else
 
@@ -81,7 +82,7 @@ window = sqrt(hann(segmentLength, 'periodic'));
 
 %% compute STFT/magnitude of training data
 
-stftTrain = stft(audioData, fs, ...
+stftTrain = stft(trainData, fs, ...
     'Window', window, 'OverlapLength', overlap, ...
     'FFTLength', dftSize, 'FrequencyRange', 'onesided');
 
@@ -108,8 +109,7 @@ beta = 2;
 %plotX(activationsSummed, sources)
 
 %% Supervised training to obtain activation matrix from recording (using known dictionary)
-%this whole block seems to be redundant when training and input data are the same 
-
+ 
 %compute STFT/magnitudes of input signal/recording
 stftInput = stft(input, fs, ...
     'Window', window, 'OverlapLength', overlap, ...
@@ -119,20 +119,22 @@ powerSpecIn = abs(stftInput).^2/length(window);
 
 X_input = rand(sources,size(powerSpecIn,2));
 
-[X_input, cost_R] = supervisedNmfTrain(powerSpecIn, A_train, X_input, iterations, beta);
+[X_input, cost_R] = supervisedNmfTrain(powerSpecIn, ...
+    A_train, X_input, iterations, beta);
 
-%% seperate sources with Wiener filtering 
+%% separate sources with Wiener filtering
 
 filteredSources = sourceSeperation(stftInput, A_train, X_input, window, overlap);
+
 
 %% plot spectrogram of each source
 
 plotSpec(filteredSources,sources,window,overlap,dftSize)
 
-%% combine wanted sources
+%% combine wanted sources in one signal
 
 x = 1;
-nosySources=[1 2 3]; %I estimate this from looking at the spectrograms each time...
+nosySources=[3 4]; %I estimate this from looking at the spectrograms each time...
 
 for ii=1:sources
     if ii ~= nosySources
@@ -315,11 +317,12 @@ function [activations, activationsSummed] = pickActivationsBySections(X, T, samp
     
         sampleTimeFrame = round((size(X,2) * procentage)/100);
     
-        %get activations for each dictionary entry (but here we assume they match one)
+        %activations for each entry in X (assuming they match time instances consecutively)
         activations(n, prevFrames:prevFrames+sampleTimeFrame) = ...
             X(n, prevFrames:prevFrames+sampleTimeFrame);
     
-        for s = 1:samplesIncluded %combine all activations across all dictionary entries
+        %combined activations across all dictionary entries for each time instance
+        for s = 1:samplesIncluded  
             activationsSummed(s, prevFrames:prevFrames+sampleTimeFrame) = ...
                 activationsSummed(s, prevFrames:prevFrames+sampleTimeFrame) + ...
                 X(s, prevFrames:prevFrames+sampleTimeFrame);

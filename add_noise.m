@@ -1,7 +1,7 @@
-function noisyAudio = addNoise(audio, noise)
-
+function noisyAudio = add_noise(audio, noise)
 % Mix noise into clean audio signal 
 
+%extend audio signal if there's more audio
 if length(audio) > length(noise)
     vertcat(noise, noise);
 end
