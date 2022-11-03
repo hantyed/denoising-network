@@ -75,8 +75,13 @@ sources = 5;
 %windowing conditions
 segmentTime = 0.030;
 segmentLength = round(segmentTime*fs);
+<<<<<<< Updated upstream
 overlap = round(segmentLength*0.75);
 dftSize = round(4069*2);
+=======
+overlap = round(segmentLength*.75);
+dftSize = round(4069*0.5);
+>>>>>>> Stashed changes
 
 window = sqrt(hann(segmentLength, 'periodic'));
 
@@ -88,6 +93,10 @@ stftTrain = stft(trainData, fs, ...
 
 powerSpecT = abs(stftTrain).^2/length(window);
 
+% figure;
+% plot(powerSpecT)
+
+
 %% NMF
 %TODO: figure out WHY output sometimes turns out NAN
 
@@ -96,13 +105,31 @@ A_train = rand(size(powerSpecT,1),sources);
 X_train = rand(sources,size(powerSpecT,2));
 
 iterations = 200;
+<<<<<<< Updated upstream
 beta = 2;
+=======
+beta = 1;
+%%
+>>>>>>> Stashed changes
 
 % Unsupervised training to obtain dictionary
 
 [A_train, X_train, cost_T] = unsupervisedNmfTrain(powerSpecT, ...
     A_train, X_train, iterations, beta);
 
+<<<<<<< Updated upstream
+=======
+
+%%
+figure;
+for i=1:sources
+plot(X_train(i,:))
+hold on
+end
+hold off
+
+%% Supervised training to obtain activation matrix from recording (using known dictionary)
+>>>>>>> Stashed changes
 
 %%
 %plotX(X_train, sources)
