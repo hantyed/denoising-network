@@ -1,104 +1,170 @@
 clear,
-%prepare data and build a "small" convolution model
+%prepare data and build a small convolution model
+
+doSampleRateConvertNoise = true;
+convStructure = 2; %1 or 2
 
 %load noise sample and all data from commonvoice dataset
-[washNoise, fsNoise] = audioread("WashingMachine-16-8-mono-1000secs.mp3");
+[noise, fsNoise] = audioread("WashingMachine-16-8-mono-1000secs.mp3");
 dataset = fullfile("voiceData","commonvoice"); 
 
 %% Load a selection of data samples 
 
 trainDataVoices = audioDatastore(fullfile(dataset,"train"),"IncludeSubfolders",true);
 
-samplesIncluded = 100; %loads only 100 samples to keep my computer alive and well
+samplesIncluded = 8; %load only a section of the dataset
 trainDataVoices = shuffle(trainDataVoices);
-trainDataVoices = subset(trainDataVoices,1:samplesIncluded); 
+trainDataVoices = subset(trainDataVoices,1:samplesIncluded);
+fs = 48000; %to be extracted from data? -in case we use another dataset
 
-%% Play example of clean audio
+%% Sample rate conversion for noise signal
+%convert the sample rate of the noise signal to be the same as audioData
+if fsNoise ~= fs && doSampleRateConvertNoise
+ 
+    inputFs = fsNoise;
+    bandwidth = 7920;
+    decimationFactor = inputFs/fs;
+    L = floor(numel(noise)/decimationFactor);
+    noise = noise(1:decimationFactor*L);
 
-[audio,audioInfo] = read(trainDataVoices);
-sound(audio,audioInfo.SampleRate)
+    sampleRateConv = dsp.SampleRateConverter('InputSampleRate', inputFs,...
+        'OutputSampleRate', fs, 'Bandwidth', bandwidth);
 
-%% Windowing conditions
+    noise = sampleRateConv(noise);
+end
 
-fs = 44100;
+%% prepare data as tall arrays
 
-segmentTime = 0.015;
-segmentLength = round(segmentTime*fs);
-overlap = round(segmentLength*0.5);
-dftSize = 1024; %CHECK: should this be size of window*0.5 - 1 ??
+audioData = readall(trainDataVoices);
 
-window = sqrt(hann(segmentLength, 'periodic'));
+%set values for data to be segmented
+segments = 8;
+window = sqrt(hann(1024,'periodic'));
+overlap = round(length(window)*0.5);
 
-%% Power of noise & clean signal
+dftSize = 1024; %TODO: figure out if this can be set to not depend on window size
 
-stftNoise = stft(washNoise, fsNoise, ...
-    "Window", window, 'OverlapLength', overlap, ...
-    'FFTLength', dftSize, 'FrequencyRange','onesided');
+%NB: tall is a keyword that by default starts a parallel pool
+%when using a small data amount it runs faster with this setting deactivated
+T = tall(audioData); 
 
-powerSpecNoise = abs(stftNoise).^2/length(window);
+[targets, predictors, magnitudes] = cellfun(...
+    @(x)prepare_data(x,...
+        noise,...
+        window,...
+        overlap,...
+        dftSize ...
+        ), ...
+    T, ...
+    UniformOutput=false ...
+); 
 
-stftAudio = stft(audio, audioInfo.SampleRate, ...
-    "Window", window, 'OverlapLength', overlap, ...
-    'FFTLength', dftSize, 'FrequencyRange','onesided');
+[targets, predictors, magnitudes] = gather(targets, predictors, magnitudes);
 
-powerSpecAudio = abs(stftAudio).^2/length(window);
+%% Normalisation of data
 
-%% Mix noise into clean audio
+predictors = cat(3,predictors{:});
+noisyMean = mean(predictors(:));
+noisyStd = std(predictors(:));
+predictors(:) = (predictors(:) - noisyMean)/noisyStd;
 
-%get random initial value from noise signal
-randind = randi(numel(washNoise) - numel(audio), [1 1]);
+targets = cat(2,targets{:});
+cleanMean = mean(targets(:));
+cleanStd = std(targets(:));
+targets(:) = (targets(:) - cleanMean)/cleanStd;
 
-%get segment from noise corresponding to length of clean audio signal
-noiseSegment = washNoise(randind:randind + numel(audio) - 1);
+%reshape
+predictors = reshape(predictors,size(predictors,1),size(predictors,2),1,size(predictors,3));
+targets = reshape(targets,1,1,size(targets,1),size(targets,2));
 
-speechPower = sum(audio.^2);
-noisePower = sum(noiseSegment.^2);
+%% split into training and validation
 
-noiseSegment = noiseSegment.*sqrt(speechPower/noisePower);
+features = dftSize*0.5;
 
-noisyAudio = audio + noiseSegment;
+inds = randperm(size(targets,4));
+L = floor(0.90*size(targets,4));
 
-%% TODO: Load data into tall arrays and normalize... Maybe even employ sample rate conversion?
+trainPredictors = predictors(1:features,:,:,inds(1:L));
+trainTargets = targets(:,:,1:features,inds(1:L));
 
-[audioMag, noisedMag] = transformSignal(audio, fs, washNoise, 0.015, dftSize*2);
-
-%%
-divisionFactor = 8;
-dividedSegmentLength = segmentLength/divisionFactor;
-
-%collect last bit of audio
-audioSegment = powerSpecAudio(size(powerSpecAudio,2)-dividedSegmentLength:end);
-rev_as = powerSpecAudio(1:dividedSegmentLength);
-
-%concatenate the 
-noisedMag = [noisedMag(:,1:divisionFactor-1) noisedMag];
-
-
+validatePredictors = predictors(1:features,:,:,inds(L+1:end));
+validateTargets = targets(:,:,1:features,inds(L+1:end));
 
 %% Define network structure
 
-%TODO: evaluate this very simple structure once data is ready...
+if convStructure == 1
 
- inputSize = [dftSize, 1, 1]; %should input size be of dftSize or the window?
- %numClasses = 2;
-% 
-layers = [
-    imageInputLayer(inputSize)
-    %convolution2dLayer(5,20)
-    convolution2dLayer([1024 1],1,Stride=[1 100],Padding="same")
-    batchNormalizationLayer
-    reluLayer
-    fullyConnectedLayer(1024)
-    softmaxLayer
-    %classificationLayer];
-    regressionLayer];
+    %convolution model only using full feature size
 
-analyzeNetwork(layers)
+    layers = [
+
+        imageInputLayer([features segments])
+    
+        %repmat([...
+        convolution2dLayer([5 1],30,Stride=[1 100],Padding="same")
+        convolution2dLayer([5 1],30,Stride=[1 100],Padding="same")
+        convolution2dLayer([5 1],18,Stride=[1 100],Padding="same")
+        batchNormalizationLayer
+        reluLayer ...
+        maxPooling2dLayer([2 2],Stride=[2 2])...
+        %],4,1);
+    
+    
+        convolution2dLayer([5 1],30,Stride=[1 100],Padding="same")
+        batchNormalizationLayer
+        reluLayer
+    
+        convolution2dLayer([5 1],8,Stride=[1 100],Padding="same")
+        batchNormalizationLayer
+        reluLayer
+    
+        %denoise example uses feature size for the last conv layer... 
+        %presumably to make a full connection before regression...
+        convolution2dLayer([features 1],1,Stride=[1 100],Padding="same")
+    
+        %This is the output layer, which will measure the loss as MSE
+        regressionLayer
+    ];
+end
+
+
+if convStructure == 2
+
+%small autoencoder with 2x downsampling
+
+    layers = [
+
+        imageInputLayer([512 8 1],"Name","imageinput")
+    
+        convolution2dLayer([9 8],18,Name="en_conv1", Stride=[1 100], Padding="same")
+        batchNormalizationLayer(Name="en_batchnorm1")
+        reluLayer(Name="en_relu1")
+        maxPooling2dLayer([2 2],Name="en_maxpool1",Stride=[2 2], Padding="same")
+    
+        convolution2dLayer([5 1],30,Name="en_conv2",Stride=[1 100], Padding="same")
+        batchNormalizationLayer(Name="en_batchnorm2")
+        reluLayer(Name="en_relu2")
+        maxPooling2dLayer([2 2],Name="en_maxpool2",Stride=[2 2], Padding="same")
+    
+        transposedConv2dLayer([2 1],30,Name="de_transposed-conv1",Stride=[2 1], Cropping="same")
+        convolution2dLayer([5 1],30,Name="de_conv1", Stride=[1 100], Padding="same")
+        batchNormalizationLayer(Name="de_batchnorm1")
+        reluLayer(Name="de_relu1")
+    
+        transposedConv2dLayer([2 2],18,Name="de_transposed-conv2",Stride=[2 2], Cropping="same")
+        convolution2dLayer([9 1],18,Name="de_conv2", Stride=[1 100], Padding="same")
+        batchNormalizationLayer(Name="de_batchnorm2")
+        reluLayer("Name","de_relu2")
+    
+        convolution2dLayer([512 1],1,Name="conv5",Stride=[1 100], Padding="same")
+        regressionLayer(Name="regressionoutput")
+        ];
+end
 
 %% Define training parameters
-%TODO: how do we measure the loss?
+%TODO: meaning behind these parameters? What's optimal?
 
-miniBatchSize = samplesIncluded*0.1;
+miniBatchSize = floor(samplesIncluded*0.20);
 options = trainingOptions("adam", ... %CHECK: why adam instead of regular gradient descend?
     MaxEpochs=3, ...
     InitialLearnRate=1e-5, ...
@@ -106,12 +172,17 @@ options = trainingOptions("adam", ... %CHECK: why adam instead of regular gradie
     Shuffle="every-epoch", ...
     Plots="training-progress", ...
     Verbose=false, ...
-    ... %ValidationFrequency=floor(size(trainPredictors,4)/miniBatchSize), ...
+    ValidationFrequency=floor(size(trainPredictors,4)/miniBatchSize), ...
     LearnRateSchedule="piecewise", ...
-    LearnRateDropFactor=0.9, ...
-    LearnRateDropPeriod=1 );
-    %ValidationData={validatePredictors,permute(validateTargets,[3 1 2 4])});
+    LearnRateDropFactor=0.9, ... 
+    LearnRateDropPeriod=1, ...
+    ValidationData={validatePredictors,permute(validateTargets,[3 1 2 4])});
 
-    %%
+    %% Train the network
 
-    %liteConvNet = trainNetwork(?,layers,options)
+    convNet = trainNetwork(...
+        trainPredictors, ...
+        permute(trainTargets,[3 1 2 4]), ...
+        layers, ...
+        options ...
+    );

@@ -1,15 +1,14 @@
-% Make prediction with a trained model (only works with one sample for now)
+% Make prediction about clean speech with a trained model (only works with one sample for now)
 
-% add audio data
+%TODO: maybe make this a function to be called in other scripts?
 
 clear,
-
 [noise, fsNoise] = audioread("WashingMachine-16-8-mono-1000secs.mp3");
 dataset = fullfile("voiceData","commonvoice"); 
 
 %% Load a selection of data samples 
 
-trainDataVoices = audioDatastore(fullfile(dataset,"train"),"IncludeSubfolders",true);
+trainDataVoices = audioDatastore(fullfile(dataset,"test"),"IncludeSubfolders",true);
 
 samplesIncluded = 1; %load a section of the dataset
 trainDataVoices = shuffle(trainDataVoices);
@@ -36,20 +35,19 @@ end
 
 audioData = readall(trainDataVoices);
 
-%preset 
-segments = 8;
-
-%NB: tall is a keyword that by default starts a parallel pool
-%when using a small data sample it runs faster with this setting deactivated
 T = tall(audioData); 
 
-segmentTime = 0.00533; %in seconds = windowLength at 256 samples
-segmentLength = round(segmentTime*fs);
+%preset
+segments = 8;
+
+segmentLength = 1024;
+%segmentLength= 256;
+
 window = sqrt(hann(segmentLength, 'periodic'));
 overlap = round(segmentLength*0.5);
 
 dftSize = length(window);
-%featureAmount = length(window)/2;
+features = length(window)*0.5;
 
 %%
 [targets, predictors, noisedStft] = ...
@@ -66,7 +64,7 @@ dftSize = length(window);
 [targets, predictors, noisedStft] = gather(targets,predictors,noisedStft);
 
 %%
-%normalisation of data...
+%normalisation of data
 
 predictors = cat(3,predictors{:});
 noisyMean = mean(predictors(:));
@@ -77,26 +75,24 @@ targets = cat(2,targets{:});
 cleanMean = mean(targets(:));
 cleanStd = std(targets(:));
 targets(:) = (targets(:) - cleanMean)/cleanStd;
-%reshape
 
-predictorsR = reshape(predictors,size(predictors,1),size(predictors,2),1,size(predictors,3));
-targetsR = reshape(targets,1,1,size(targets,1),size(targets,2));
+predictors = reshape(predictors,size(predictors,1),size(predictors,2),1,size(predictors,3));
+targets = reshape(targets,1,1,size(targets,1),size(targets,2));
 
 %split into training and validation
 
-inds = randperm(size(predictorsR,4));
-L = floor(0.90*size(predictorsR,4));
-
-trainPredictors = predictorsR(:,:,:,:);
-trainTargets = targetsR(:,:,:,:);
+trainPredictors = predictors(1:features,:,:,:);
+trainTargets = targets(:,:,1:features,:);
 
 %% prediction
+%load a network
 
-%load CNN and make prediction
-load denoiseDNN2Conv.mat
+%load denoiseDNN2Conv.mat
+%load tinyNet1.mat
 
 predictionData = trainPredictors;
-speech = predict(denoiseNetFullyConvolutional,predictionData);
+%speech = predict(denoiseNetFullyConvolutional,predictionData);
+speech = predict(liteConvNet,predictionData);
 
 %% convert prediction into audio signal
 
@@ -115,3 +111,14 @@ speechReconstruct = istft(speech, fs, ...
     "FFTLength", dftSize, "ConjugateSymmetric", true);
 
 figure, plot(speechReconstruct);
+
+%%
+
+%get rid of the rather significant amplitude error
+speechAug = speechReconstruct(100:end-100);
+
+figure, plot(speechAug)
+figure, plot(audioData{1})
+
+figure, spectrogram(speechAug, window, overlap, dftSize, 'yaxis')
+figure, spectrogram(audioData{1}, window, overlap, dftSize, 'yaxis')
