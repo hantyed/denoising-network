@@ -1,25 +1,13 @@
 function [targets, predictors, stftNoisyAudio] ...
-    = prepare_data(audio, noise, window, overlap, dftSize)
+    = prepare_data(audio, fs, noise, window, overlap, dftSize)
 %Extracts the features of the audio signal in proper dimensions for network training 
-%and returns target/predictor pairs as well as the amount of features
-% (depending on length of window, which could be made a changable parameter)
+% returns target/predictor pairs and stft of audio with noise added
 
 %files for test/debug
 %audio = audioread("speech_example.wav");
 %noise = audioread("WashingMachine-16-8-mono-1000secs.mp3");
 
-%% Windowing conditions
-
-fs = 48000;
-
-%use a segment of 10 ms for windowing
-%segmentTime = 0.010; %max recommended size of window
-%segmentTime = 0.0054; %size used in denoise MATLAB example
-%segmentLength = round(segmentTime*fs);
-%overlap = round(segmentLength*0.5);
-
-%window = sqrt(hann(segmentLength, 'periodic'));
-%dftSize = length(window);
+%% conditions for data format
 
 %the amount of audio features & segments returned for training ML model
 featureAmount = length(window)/2 + 1;
@@ -39,8 +27,8 @@ stftCleanAudio = stft(audio, fs, ...
     'FFTLength', dftSize, 'FrequencyRange','onesided');
 
 %compute magnitude from STFT of clean + noised signals
-cleanSignalFeatures = abs(stftCleanAudio);
-noisySignalFeatures = abs(stftNoisyAudio);
+cleanSignalFeatures = abs(stftCleanAudio).^2/length(window);
+noisySignalFeatures = abs(stftNoisyAudio).^2/length(window);
 
 %%
 

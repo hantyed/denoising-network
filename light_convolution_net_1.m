@@ -12,7 +12,7 @@ dataset = fullfile("voiceData","commonvoice");
 
 trainDataVoices = audioDatastore(fullfile(dataset,"train"),"IncludeSubfolders",true);
 
-samplesIncluded = 8; %load only a section of the dataset
+samplesIncluded = 50; %load only a section of the dataset
 trainDataVoices = shuffle(trainDataVoices);
 trainDataVoices = subset(trainDataVoices,1:samplesIncluded);
 fs = 48000; %to be extracted from data? -in case we use another dataset
@@ -96,35 +96,35 @@ if convStructure == 1
 
     %convolution model only using full feature size
 
-    layers = [
-
-        imageInputLayer([features segments])
-    
-        %repmat([...
-        convolution2dLayer([5 1],30,Stride=[1 100],Padding="same")
-        convolution2dLayer([5 1],30,Stride=[1 100],Padding="same")
-        convolution2dLayer([5 1],18,Stride=[1 100],Padding="same")
-        batchNormalizationLayer
-        reluLayer ...
-        maxPooling2dLayer([2 2],Stride=[2 2])...
-        %],4,1);
-    
-    
-        convolution2dLayer([5 1],30,Stride=[1 100],Padding="same")
-        batchNormalizationLayer
-        reluLayer
-    
-        convolution2dLayer([5 1],8,Stride=[1 100],Padding="same")
-        batchNormalizationLayer
-        reluLayer
-    
-        %denoise example uses feature size for the last conv layer... 
-        %presumably to make a full connection before regression...
-        convolution2dLayer([features 1],1,Stride=[1 100],Padding="same")
-    
-        %This is the output layer, which will measure the loss as MSE
-        regressionLayer
-    ];
+%     layers = [
+% 
+%         imageInputLayer([features segments])
+%     
+%         repmat([...
+%         convolution2dLayer([5 1],30,Stride=[1 100],Padding="same")
+%         convolution2dLayer([5 1],30,Stride=[1 100],Padding="same")
+%         convolution2dLayer([5 1],18,Stride=[1 100],Padding="same")
+%         batchNormalizationLayer
+%         reluLayer ...
+%         maxPooling2dLayer([2 2],Stride=[2 2])...
+%         ],4,1);
+%     
+%     
+%         convolution2dLayer([5 1],30,Stride=[1 100],Padding="same")
+%         batchNormalizationLayer
+%         reluLayer
+%     
+%         convolution2dLayer([5 1],8,Stride=[1 100],Padding="same")
+%         batchNormalizationLayer
+%         reluLayer
+%     
+%         denoise example uses feature size for the last conv layer... 
+%         presumably to make a full connection before regression...
+%         convolution2dLayer([features 1],1,Stride=[1 100],Padding="same")
+%     
+%         This is the output layer, which will measure the loss as MSE
+%         regressionLayer
+    %];
 end
 
 
@@ -146,6 +146,16 @@ if convStructure == 2
         reluLayer(Name="en_relu2")
         maxPooling2dLayer([2 2],Name="en_maxpool2",Stride=[2 2], Padding="same")
     
+%         convolution2dLayer([5 1],30,Name="en_conv3",Stride=[1 100], Padding="same")
+%         batchNormalizationLayer(Name="en_batchnorm3")
+%         reluLayer(Name="en_relu3")
+%         maxPooling2dLayer([2 2],Name="en_maxpool3",Stride=[2 2], Padding="same")
+%     
+%         transposedConv2dLayer([2 1],30,Name="de_transposed-conv3",Stride=[2 1], Cropping="same")
+%         convolution2dLayer([5 1],30,Name="de_conv3", Stride=[1 100], Padding="same")
+%         batchNormalizationLayer(Name="de_batchnorm3")
+%         reluLayer(Name="de_relu3")
+
         transposedConv2dLayer([2 1],30,Name="de_transposed-conv1",Stride=[2 1], Cropping="same")
         convolution2dLayer([5 1],30,Name="de_conv1", Stride=[1 100], Padding="same")
         batchNormalizationLayer(Name="de_batchnorm1")
@@ -164,7 +174,7 @@ end
 %% Define training parameters
 %TODO: meaning behind these parameters? What's optimal?
 
-miniBatchSize = floor(samplesIncluded*0.20);
+miniBatchSize = floor(samplesIncluded*0.30);
 options = trainingOptions("adam", ... %CHECK: why adam instead of regular gradient descend?
     MaxEpochs=3, ...
     InitialLearnRate=1e-5, ...
