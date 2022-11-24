@@ -1,6 +1,6 @@
 *.wav
 *.tsv
 *.asv
-*.mat
 
 LibriSpeech/
+mat/
