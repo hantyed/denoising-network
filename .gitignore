@@ -1,6 +1,9 @@
-*.wav
+
 *.tsv
 *.asv
 
 LibriSpeech/
+voiceData/
+
 mat/
+nmfData/
