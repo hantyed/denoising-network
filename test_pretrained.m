@@ -52,6 +52,7 @@ features = length(window)*0.5;
 %%
 [targets, predictors, noisedStft] = ...
     cellfun(@(x)prepare_data(x, ...
+        fs, ...
         noise, ...
         window, ...
         overlap, ...
@@ -92,7 +93,8 @@ trainTargets = targets(:,:,1:features,:);
 
 predictionData = trainPredictors;
 %speech = predict(denoiseNetFullyConvolutional,predictionData);
-speech = predict(liteConvNet,predictionData);
+%speech = predict(liteConvNet,predictionData);
+speech = predict(convNetEnDecode, predictionData);
 
 %% convert prediction into audio signal
 
@@ -101,7 +103,7 @@ noisePhase = angle(noisedStft{1});
 speech(:) = cleanStd*speech(:) + cleanMean;
 
 %beware of dimensions - for some reason speech might be -1 too short
-speech = squeeze(speech(:,:,:,1:end-1)).* exp(1j*noisePhase); 
+speech = squeeze(speech(:,:,:,1:end-1)).* exp(1j*noisePhase(1:end-1,:)); 
 
 speech = [conj(speech(end-1:-1:2,:)); speech];
 
@@ -122,3 +124,4 @@ figure, plot(audioData{1})
 
 figure, spectrogram(speechAug, window, overlap, dftSize, 'yaxis')
 figure, spectrogram(audioData{1}, window, overlap, dftSize, 'yaxis')
+

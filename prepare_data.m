@@ -1,5 +1,5 @@
 function [targets, predictors, stftNoisyAudio] ...
-    = prepare_data(audio, fs, noise, window, overlap, dftSize)
+    = prepare_data(audio, fs, window, overlap, dftSize)
 %Extracts the features of the audio signal in proper dimensions for network training 
 % returns target/predictor pairs and stft of audio with noise added
 
@@ -14,10 +14,13 @@ featureAmount = length(window)/2 + 1;
 segments = 8;
 newFs = 8000;
 
-[audio] = mydownsample(audio,fs,newFs);
+if fs ~= newFs
+    audio = mydownsample(audio,fs,newFs);
+end
 
 %add the selected noise to the clean audio signals
-noisyAudio = add_noise(audio, noise);
+%noisyAudio = add_noise(audio, noise);
+noisyAudio = add_noise_2(audio);
 
 %% Power of noise & clean signal
 
